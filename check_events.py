@@ -20,7 +20,7 @@ def send_telegram_message(message):
         "chat_id": TELEGRAM_CHAT_ID, 
         "text": message, 
         "parse_mode": "Markdown",
-        "disable_web_page_preview": True  # True hides messy website preview blocks
+        "disable_web_page_preview": True
     }
     try:
         response = requests.post(url, json=payload)
@@ -73,24 +73,18 @@ def main():
             if event_id not in old_event_ids:
                 new_events_found.append(data)
 
-    # 4. Clean, Simple, Easy-to-click Layout
+    # 4. Ultra-minimalist layout
     if new_events_found:
         print(f"Found {len(new_events_found)} new events!")
         
-        # Build a neat, spacious list
         links_list = []
         for item in new_events_found:
-            # Format: Emphasizes the title, leaves a distinct link arrow right underneath
-            links_list.append(f"🎫 *{item['title']}*\n👈 [לחץ כאן לפרטים והרשמה]({item['url']})")
+            # Keeps everything on one simple line: Event Name - Link
+            links_list.append(f"• {item['title']} -> [קישור]({item['url']})")
         
-        # Join sections with a double newline for clean structural spacing
-        events_str = "\n\n".join(links_list)
+        events_str = "\n".join(links_list)
+        message = f"אירועים חדשים:\n{events_str}"
         
-        message = (
-            "✨ *מצאתי אירועים חדשים באתר!* ✨\n\n"
-            f"{events_str}\n\n"
-            "---"
-        )
         send_telegram_message(message)
     else:
         print(f"No new events. Total active tracked events on page: {len(current_events)}")
