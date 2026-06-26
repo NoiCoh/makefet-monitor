@@ -2,7 +2,7 @@ import os
 import re
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs
 
 BASE_URL = "https://makefet.smarticket.co.il/"
 URL = "https://makefet.smarticket.co.il/%D7%92%D7%99%D7%9C_%D7%94%D7%A8%D7%9A"
@@ -20,7 +20,7 @@ def send_telegram_message(message):
         "chat_id": TELEGRAM_CHAT_ID, 
         "text": message, 
         "parse_mode": "Markdown",
-        "disable_web_page_preview": False  # Keeps link previews clean
+        "disable_web_page_preview": False
     }
     try:
         response = requests.post(url, json=payload)
@@ -41,23 +41,26 @@ def main():
         return
 
     soup = BeautifulSoup(response.text, 'html.parser')
-    
-    # 1. Target all event and show links
-    event_links = soup.find_all('a', href=re.compile(r'/event/|/show/'))
+    event_links = soup.find_all('a', href=True)
     
     current_events = {}
     for link in event_links:
         href = link.get('href', '')
-        # Absolute URL formatting
         full_url = urljoin(BASE_URL, href)
         
-        # Extract ID to use as a unique identifier key
-        event_ids = re.findall(r'\d+', href)
-        if event_ids:
-            event_id = event_ids[0]
-            title = link.get_text().strip() or "צפייה באירוע"
+        # Parse out the URL query to look for the 'id' parameter (e.g., ?id=4317)
+        parsed_url = urlparse(full_url)
+        query_params = parse_qs(parsed_url.query)
+        
+        if 'id' in query_params:
+            event_id = query_params['id'][0] # This gets '4317'
             
-            # Save the text and the direct link
+            # Use link text or a clean default title
+            title = link.get_text().strip()
+            if not title or len(title) < 3: 
+                title = "לחץ לצפייה באירוע" # Fallback Hebrew text ("Click to view event")
+            
+            # Map by event_id to prevent duplicates if the same link appears twice on the page
             current_events[event_id] = {
                 "title": title,
                 "url": full_url
@@ -69,29 +72,24 @@ def main():
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             old_event_ids = set(line.strip() for line in f.readlines() if line.strip())
 
-    # 3. Check strictly for NEW additions
+    # 3. Check for NEW events (Skip on first tracking run so you don't get flooded)
     new_events_found = []
-    if old_event_ids:  # Skip on the very first crawl baseline setup
+    if old_event_ids:  
         for event_id, data in current_events.items():
             if event_id not in old_event_ids:
                 new_events_found.append(data)
 
-    # 4. Construct message if new items exist
+    # 4. Notify if new event(s) popped up
     if new_events_found:
         print(f"Found {len(new_events_found)} new events!")
-        
-        # Build markdown links: [Title text](URL)
-        links_list = []
-        for item in new_events_found:
-            links_list.append(f"• [{item['title']}]({item['url']})")
-        
+        links_list = [f"• [{item['title']}]({item['url']})" for item in new_events_found]
         events_str = "\n".join(links_list)
         message = f"🔔 *Those are the new events uploaded:*\n\n{events_str}"
         send_telegram_message(message)
     else:
-        print("No new events detected.")
+        print(f"No new events. Total active tracked events on page: {len(current_events)}")
 
-    # 5. Save the state mapping
+    # 5. Save current IDs list to state file
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         for eid in sorted(list(current_events.keys())):
             f.write(f"{eid}\n")
