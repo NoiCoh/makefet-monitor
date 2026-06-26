@@ -20,7 +20,7 @@ def send_telegram_message(message):
         "chat_id": TELEGRAM_CHAT_ID, 
         "text": message, 
         "parse_mode": "Markdown",
-        "disable_web_page_preview": False
+        "disable_web_page_preview": True  # True hides messy website preview blocks
     }
     try:
         response = requests.post(url, json=payload)
@@ -48,48 +48,53 @@ def main():
         href = link.get('href', '')
         full_url = urljoin(BASE_URL, href)
         
-        # Parse out the URL query to look for the 'id' parameter (e.g., ?id=4317)
         parsed_url = urlparse(full_url)
         query_params = parse_qs(parsed_url.query)
         
         if 'id' in query_params:
-            event_id = query_params['id'][0] # This gets '4317'
-            
-            # Use link text or a clean default title
+            event_id = query_params['id'][0]
             title = link.get_text().strip()
             if not title or len(title) < 3: 
-                title = "לחץ לצפייה באירוע" # Fallback Hebrew text ("Click to view event")
+                title = "אירוע חדש"
             
-            # Map by event_id to prevent duplicates if the same link appears twice on the page
             current_events[event_id] = {
                 "title": title,
                 "url": full_url
             }
 
-    # 2. Read previously saved event IDs
     old_event_ids = set()
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             old_event_ids = set(line.strip() for line in f.readlines() if line.strip())
 
-    # 3. Check for NEW events (Skip on first tracking run so you don't get flooded)
     new_events_found = []
     if old_event_ids:  
         for event_id, data in current_events.items():
             if event_id not in old_event_ids:
                 new_events_found.append(data)
 
-    # 4. Notify if new event(s) popped up
+    # 4. Clean, Simple, Easy-to-click Layout
     if new_events_found:
         print(f"Found {len(new_events_found)} new events!")
-        links_list = [f"• [{item['title']}]({item['url']})" for item in new_events_found]
-        events_str = "\n".join(links_list)
-        message = f"🔔 *Those are the new events uploaded:*\n\n{events_str}"
+        
+        # Build a neat, spacious list
+        links_list = []
+        for item in new_events_found:
+            # Format: Emphasizes the title, leaves a distinct link arrow right underneath
+            links_list.append(f"🎫 *{item['title']}*\n👈 [לחץ כאן לפרטים והרשמה]({item['url']})")
+        
+        # Join sections with a double newline for clean structural spacing
+        events_str = "\n\n".join(links_list)
+        
+        message = (
+            "✨ *מצאתי אירועים חדשים באתר!* ✨\n\n"
+            f"{events_str}\n\n"
+            "---"
+        )
         send_telegram_message(message)
     else:
         print(f"No new events. Total active tracked events on page: {len(current_events)}")
 
-    # 5. Save current IDs list to state file
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         for eid in sorted(list(current_events.keys())):
             f.write(f"{eid}\n")
