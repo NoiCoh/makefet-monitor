@@ -28,27 +28,31 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Error sending Telegram message: {e}")
 
-def clean_title(title_text):
-    """Strips ugly whitespace, linebreaks, and irrelevant footer links."""
-    if not title_text:
-        return "אירוע חדש"
+def extract_real_title(raw_text):
+    """Splits the messy block by lines and finds the actual event name line."""
+    # Split text by newlines or deep spacing tabs
+    lines = re.split(r'[\n\r\t]+', raw_text)
+    
+    for line in lines:
+        clean_line = line.strip()
         
-    # Replace multiple spaces/tabs/newlines with a single space
-    clean = re.sub(r'\s+', ' ', title_text).strip()
-    
-    # Smarticket specific: If it grabbed dates or headers, extract the main name component
-    # Try to grab text before common trailing links like 'גיל הרך' or 'דף הבית'
-    for stop_word in ["גיל הרך", "דף הבית", "פרטים נוספים", "הכרטיסים אזלו"]:
-        if stop_word in clean:
-            clean = clean.split(stop_word)[0].strip()
+        # Skip empty lines
+        if not clean_line:
+            continue
             
-    # Strip leading date stamps like '01יולי' or '10אוגוסט' if they stick to the title
-    clean = re.sub(r'^\d+[א-ת]+\s*', '', clean)
-    
-    # Remove trailing commas/dashes
-    clean = clean.rstrip(',- ').strip()
-    
-    return clean if len(clean) > 2 else "אירוע חדש"
+        # Skip small utility lines, dates, or footer navigation
+        if len(clean_line) < 4:
+            continue
+        if any(ignore in clean_line for ignore in ["דף הבית", "מרכזים קהילתיים", "פרטים נוספים", "הכרטיסים אזלו", "בשעה", "ביום"]):
+            continue
+        # Skip date lines like "01יולי" or "10אוגוסט"
+        if re.match(r'^\d+[א-ת]+$', clean_line):
+            continue
+            
+        # The first long descriptive line that survives is always our true event title!
+        return clean_line
+
+    return "אירוע חדש"
 
 def main():
     headers = {
@@ -76,11 +80,8 @@ def main():
         if 'id' in query_params:
             event_id = query_params['id'][0]
             
-            # If the link has an inner heading (like h2, h3, h4, or strong), use that instead of full text
-            heading = link.find(['h2', 'h3', 'h4', 'strong', 'span'])
-            raw_title = heading.get_text() if heading else link.get_text()
-            
-            title = clean_title(raw_title)
+            # Extract the pure title line out of the messy text bundle
+            title = extract_real_title(link.get_text())
             
             current_events[event_id] = {
                 "title": title,
@@ -104,9 +105,6 @@ def main():
         
         links_list = []
         for index, item in enumerate(new_events_found, 1):
-            # Builds exactly the style you asked for:
-            # 1. Title
-            # - קישור -
             links_list.append(f"{index}. {item['title']}\n- [קישור]({item['url']}) -")
         
         events_str = "\n".join(links_list)
