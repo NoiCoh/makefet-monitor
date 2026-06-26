@@ -28,6 +28,28 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Error sending Telegram message: {e}")
 
+def clean_title(title_text):
+    """Strips ugly whitespace, linebreaks, and irrelevant footer links."""
+    if not title_text:
+        return "אירוע חדש"
+        
+    # Replace multiple spaces/tabs/newlines with a single space
+    clean = re.sub(r'\s+', ' ', title_text).strip()
+    
+    # Smarticket specific: If it grabbed dates or headers, extract the main name component
+    # Try to grab text before common trailing links like 'גיל הרך' or 'דף הבית'
+    for stop_word in ["גיל הרך", "דף הבית", "פרטים נוספים", "הכרטיסים אזלו"]:
+        if stop_word in clean:
+            clean = clean.split(stop_word)[0].strip()
+            
+    # Strip leading date stamps like '01יולי' or '10אוגוסט' if they stick to the title
+    clean = re.sub(r'^\d+[א-ת]+\s*', '', clean)
+    
+    # Remove trailing commas/dashes
+    clean = clean.rstrip(',- ').strip()
+    
+    return clean if len(clean) > 2 else "אירוע חדש"
+
 def main():
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -53,9 +75,12 @@ def main():
         
         if 'id' in query_params:
             event_id = query_params['id'][0]
-            title = link.get_text().strip()
-            if not title or len(title) < 3: 
-                title = "אירוע חדש"
+            
+            # If the link has an inner heading (like h2, h3, h4, or strong), use that instead of full text
+            heading = link.find(['h2', 'h3', 'h4', 'strong', 'span'])
+            raw_title = heading.get_text() if heading else link.get_text()
+            
+            title = clean_title(raw_title)
             
             current_events[event_id] = {
                 "title": title,
@@ -73,17 +98,19 @@ def main():
             if event_id not in old_event_ids:
                 new_events_found.append(data)
 
-    # 4. Ultra-minimalist layout
+    # 4. Perfectly formatted minimalist layout
     if new_events_found:
         print(f"Found {len(new_events_found)} new events!")
         
         links_list = []
-        for item in new_events_found:
-            # Keeps everything on one simple line: Event Name - Link
-            links_list.append(f"• {item['title']} -> [קישור]({item['url']})")
+        for index, item in enumerate(new_events_found, 1):
+            # Builds exactly the style you asked for:
+            # 1. Title
+            # - קישור -
+            links_list.append(f"{index}. {item['title']}\n- [קישור]({item['url']}) -")
         
         events_str = "\n".join(links_list)
-        message = f"אירועים חדשים:\n{events_str}"
+        message = f"Hi, you got new events 🙂:\n\n{events_str}"
         
         send_telegram_message(message)
     else:
