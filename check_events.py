@@ -19,14 +19,19 @@ def send_telegram_message(message):
     payload = {
         "chat_id": TELEGRAM_CHAT_ID, 
         "text": message, 
-        "parse_mode": "Markdown",
+        "parse_mode": "HTML",  # Switched to HTML for reliable text parsing
         "disable_web_page_preview": True
     }
     try:
         response = requests.post(url, json=payload)
         response.raise_for_status()
-    except Exception as e:
+    except requests.exceptions.HTTPError as e:
+        # Prints Telegram's specific error message if the API rejects it
         print(f"Error sending Telegram message: {e}")
+        if e.response is not None:
+            print(f"Telegram API Details: {e.response.text}")
+    except Exception as e:
+        print(f"Unexpected error sending Telegram message: {e}")
 
 def extract_real_title(raw_text):
     """Splits the messy block by lines and finds the actual event name line."""
@@ -99,13 +104,14 @@ def main():
             if event_id not in old_event_ids:
                 new_events_found.append(data)
 
-    # 4. Perfectly formatted minimalist layout
+    # Perfectly formatted minimalist layout using HTML links
     if new_events_found:
         print(f"Found {len(new_events_found)} new events!")
         
         links_list = []
         for index, item in enumerate(new_events_found, 1):
-            links_list.append(f"{index}. {item['title']}\n- [קישור]({item['url']}) -")
+            # Using HTML <a> tag syntax instead of Markdown syntax
+            links_list.append(f"{index}. {item['title']}\n- <a href=\"{item['url']}\">קישור</a> -")
         
         events_str = "\n".join(links_list)
         message = f"Hi, you got new events 🙂:\n\n{events_str}"
